@@ -460,7 +460,7 @@ main(int argc, char** argv) {
   watchdog->addQueue(prefixUpdatesQueue, "prefixUpdatesQueue");
 
   // Start NeighborMonitor
-  if (config->isNeighborMonitorEnabled()) {
+ /* if (config->isNeighborMonitorEnabled()) {
     startEventBase(
         allThreads,
         orderedEvbs,
@@ -468,7 +468,7 @@ main(int argc, char** argv) {
         "neighbor-monitor",
         std::make_unique<NeighborMonitor>(addrEventsQueue));
     watchdog->addQueue(addrEventsQueue, "addrEventsQueue");
-  }
+  }*/
 
   // Start Spark
   auto spark = startEventBase(
