@@ -10,7 +10,7 @@
 
 #include <openr/if/gen-cpp2/KvStoreServiceAsyncClient.h>
 #include <openr/kvstore/KvStoreWrapper.h>
-#include <range/v3/view/enumerate.hpp>
+//#include <range/v3/view/enumerate.hpp>
 
 using namespace openr;
 
@@ -305,10 +305,10 @@ TEST_P(KvStoreTestTtlFixture, Graph) {
       {7, 5},
   };
 
-  VLOG(1) << "Adjacency list: ";
-  for (const auto&& [index, set] : adjacencyList | ranges::views::enumerate) {
-    VLOG(1) << index << ": " << fmt::format("{}", fmt::join(set, ", "));
-  }
+  //VLOG(1) << "Adjacency list: ";
+  //for (const auto&& [index, set] : adjacencyList | ranges::views::enumerate) {
+  //  VLOG(1) << index << ": " << fmt::format("{}", fmt::join(set, ", "));
+  //}
   performKvStoreSyncTest(
       adjacencyList, "kv_store_graph::store", kNumStores, kNumStores + 1);
 }
