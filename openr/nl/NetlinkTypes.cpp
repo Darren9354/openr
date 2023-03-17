@@ -653,11 +653,11 @@ NextHop::str() const {
       (ifIndex_ ? std::to_string(*ifIndex_) : "n/a"),
       std::to_string(weight_),
       static_cast<int>(getFamily()));
-  if (labelAction_.has_value()) {
-    result += fmt::format(
-        " Label action {}",
-        apache::thrift::util::enumNameSafe(labelAction_.value()));
-  }
+  //if (labelAction_.has_value()) {
+   // result += fmt::format(
+     //   " Label action {}",
+       // apache::thrift::util::enumNameSafe(labelAction_.value()));
+  //}
   if (swapLabel_.has_value()) {
     result += fmt::format(" Swap label {}", swapLabel_.value());
   }
