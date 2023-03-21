@@ -537,15 +537,17 @@ NetlinkProtocolSocket::deleteRoute(const openr::fbnl::Route& route) {
 
 folly::SemiFuture<int>
 NetlinkProtocolSocket::addIfAddress(const openr::fbnl::IfAddress& ifAddr) {
-  XLOG(DBG1) << "Netlink add interface address. " << ifAddr.str();
+  XLOG(INFO) << "Netlink add interface address. " << ifAddr.str();
   auto addrMsg = std::make_unique<openr::fbnl::NetlinkAddrMessage>();
   auto future = addrMsg->getSemiFuture();
 
   // Initialize Netlink message fields to add interface address
   int status = addrMsg->addOrDeleteIfAddress(ifAddr, RTM_NEWADDR);
   if (status != 0) {
+    XLOG(INFO) << "Netlink add interface address failed. " << ifAddr.str();
     addrMsg->setReturnStatus(status);
   } else {
+   XLOG(INFO) << "Netlink add interface address put message. " << ifAddr.str();
     notifQueue_.putMessage(std::move(addrMsg));
   }
 
