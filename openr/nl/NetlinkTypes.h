@@ -346,8 +346,12 @@ class IfAddressBuilder final {
   int getIfIndex() const;
 
   IfAddressBuilder& setPrefix(const folly::CIDRNetwork& prefix);
-
+  
   std::optional<folly::CIDRNetwork> getPrefix() const;
+
+  IfAddressBuilder& setBroadcast(const folly::CIDRNetwork& broadcast);
+
+  std::optional<folly::CIDRNetwork> getBrocast() const;
 
   IfAddressBuilder& setFamily(uint8_t family);
 
@@ -375,6 +379,7 @@ class IfAddressBuilder final {
 
  private:
   std::optional<folly::CIDRNetwork> prefix_;
+  std::optional<folly::CIDRNetwork> broadcast_;
   int ifIndex_{0};
   bool isValid_{false};
   std::optional<uint8_t> scope_;
@@ -403,6 +408,8 @@ class IfAddress final {
 
   std::optional<folly::CIDRNetwork> getPrefix() const;
 
+  std::optional<folly::CIDRNetwork> getBroadcast() const;
+
   std::optional<uint8_t> getScope() const;
 
   std::optional<uint8_t> getFlags() const;
@@ -415,6 +422,7 @@ class IfAddress final {
 
  private:
   std::optional<folly::CIDRNetwork> prefix_;
+  std::optional<folly::CIDRNetwork> broadcast_;
   int ifIndex_{0};
   bool isValid_{false};
   std::optional<uint8_t> scope_;
