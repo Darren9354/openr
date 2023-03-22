@@ -87,7 +87,17 @@ NetlinkAddrMessage::addOrDeleteIfAddress(
   ifaddrmsg_->ifa_index = ifAddr.getIfIndex();
 
   const char* const ipptr = reinterpret_cast<const char*>(ip.bytes());
-  int status = addAttributes(IFA_ADDRESS, ipptr, ip.byteCount());
+  int status;
+  if (ifAddr.getBroadcast().has_value())
+  {
+    auto ip = std::get<0>(ifAddr.getBroadcast().value());
+    const char* const ipptr = reinterpret_cast<const char*>(ip.bytes());
+    status = addAttributes(IFA_BROADCAST, ipptr, ip.byteCount());
+  }
+  else
+  {
+    status = addAttributes(IFA_ADDRESS, ipptr, ip.byteCount());
+  }
   if (status) {
     return status;
   }
