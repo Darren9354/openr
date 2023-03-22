@@ -82,7 +82,7 @@ NetlinkMessageBase::addAttributes(
       reinterpret_cast<struct rtattr*>(((char*)(msghdr_)) + nlmsgAlen);
   rptr->rta_type = type;
   rptr->rta_len = rtaLen;
-  XLOG(DBG3) << "Adding attribute. type=" << type << ", len=" << rtaLen;
+  XLOG(INFO) << "Adding attribute. type=" << type << ", len=" << rtaLen;
   if (data) {
     memcpy(RTA_DATA(rptr), data, len);
   }
