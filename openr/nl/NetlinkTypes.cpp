@@ -700,6 +700,18 @@ IfAddressBuilder::getPrefix() const {
 }
 
 IfAddressBuilder&
+IfAddressBuilder::setBroadcast(const folly::CIDRNetwork& broadcast) {
+  broadcast_ = broadcast;
+  return *this;
+}
+
+std::optional<folly::CIDRNetwork>
+IfAddressBuilder::getBrocast() const {
+  return broadcast_;
+}
+
+
+IfAddressBuilder&
 IfAddressBuilder::setFamily(uint8_t family) {
   family_ = family;
   return *this;
@@ -773,6 +785,7 @@ IfAddress::IfAddress(const IfAddressBuilder& builder)
       scope_(builder.getScope()),
       flags_(builder.getFlags()),
       family_(builder.getFamily()),
+      broadcast_(builder.getBrocast()),
       preferredLft_(builder.getPreferredLft()) {}
 
 IfAddress::~IfAddress() {}
@@ -848,6 +861,11 @@ IfAddress::isValid() const {
 std::optional<folly::CIDRNetwork>
 IfAddress::getPrefix() const {
   return prefix_;
+}
+
+std::optional<folly::CIDRNetwork>
+IfAddress::getBroadcast() const {
+  return broadcast_;
 }
 
 std::optional<uint8_t>
