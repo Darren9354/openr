@@ -1175,6 +1175,17 @@ LinkBuilder::getIfIndex() const {
 }
 
 LinkBuilder&
+LinkBuilder::setIfMtu(int mtu) {
+  mtu_ = mtu;
+  return *this;
+}
+
+int
+LinkBuilder::getIfMtu() const {
+  return mtu_;
+}
+
+LinkBuilder&
 LinkBuilder::setFlags(uint32_t flags) {
   flags_ = flags;
   return *this;
@@ -1220,6 +1231,7 @@ LinkBuilder::getLinkGroup() const {
 Link::Link(const LinkBuilder& builder)
     : linkName_(builder.getLinkName()),
       ifIndex_(builder.getIfIndex()),
+      mtu_(builder.getIfMtu()),
       flags_(builder.getFlags()),
       linkKind_(builder.getLinkKind()),
       greInfo_(builder.getGreInfo()),
@@ -1273,6 +1285,11 @@ Link::getLinkName() const {
 int
 Link::getIfIndex() const {
   return ifIndex_;
+}
+
+int
+Link::getIfMtu() const {
+  return mtu_;
 }
 
 uint32_t
