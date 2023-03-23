@@ -1,11 +1,13 @@
 /*
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  */
 
 #include <openr/nl/NetlinkTypes.h>
+#include <cstdint>
+#include <optional>
 
 extern "C" {
 #include <net/if.h>
@@ -171,6 +173,39 @@ RouteBuilder::isValid() const {
   return isValid_;
 }
 
+RouteBuilder&
+RouteBuilder::setMultiPath(bool isMultiPath) {
+  isMultiPath_ = isMultiPath;
+  return *this;
+}
+
+bool
+RouteBuilder::isMultiPath() const {
+  return isMultiPath_;
+}
+
+RouteBuilder&
+RouteBuilder::setOIf(uint32_t oif) {
+  oif_ = oif;
+  return *this;
+}
+
+std::optional<uint32_t>
+RouteBuilder::getOIf() const {
+  return oif_;
+}
+
+RouteBuilder&
+RouteBuilder::setPrefSrc(folly::IPAddress src) {
+  prefSrc_ = src;
+  return *this;
+}
+
+std::optional<folly::IPAddress>
+RouteBuilder::getPrefSrc() const {
+  return prefSrc_;
+}
+
 void
 RouteBuilder::reset() {
   type_ = RTN_UNICAST;
@@ -184,6 +219,9 @@ RouteBuilder::reset() {
   mtu_.reset();
   advMss_.reset();
   nextHops_.clear();
+  isMultiPath_ = true;
+  oif_ = std::nullopt;
+  prefSrc_ = std::nullopt;
 }
 
 Route::Route(const RouteBuilder& builder)
@@ -200,7 +238,10 @@ Route::Route(const RouteBuilder& builder)
       advMss_(builder.getAdvMss()),
       nextHops_(builder.getNextHops()),
       dst_(builder.getDestination()),
-      mplsLabel_(builder.getMplsLabel()) {}
+      mplsLabel_(builder.getMplsLabel()),
+      isMultiPath_(builder.isMultiPath()),
+      oif_(builder.getOIf()),
+      prefSrc_(builder.getPrefSrc()) {}
 
 Route::~Route() {}
 
@@ -227,6 +268,9 @@ Route::operator=(Route&& other) noexcept {
   dst_ = std::move(other.dst_);
   family_ = std::move(other.family_);
   mplsLabel_ = std::move(other.mplsLabel_);
+  isMultiPath_ = std::move(other.isMultiPath_);
+  oif_ = std::move(other.oif_);
+  prefSrc_ = std::move(other.prefSrc_);
   return *this;
 }
 
@@ -253,6 +297,9 @@ Route::operator=(const Route& other) {
   dst_ = other.dst_;
   family_ = other.family_;
   mplsLabel_ = other.mplsLabel_;
+  isMultiPath_ = other.isMultiPath_;
+  oif_ = other.oif_;
+  prefSrc_ = other.prefSrc_;
   return *this;
 }
 
@@ -269,7 +316,7 @@ operator==(const Route& lhs, const Route& rhs) {
        lhs.getFlags() == rhs.getFlags() &&
        lhs.getPriority() == rhs.getPriority() && lhs.getTos() == rhs.getTos() &&
        lhs.getMtu() == rhs.getMtu() && lhs.getAdvMss() == rhs.getAdvMss() &&
-       lhs.getFamily() == rhs.getFamily());
+       lhs.getFamily() == rhs.getFamily() && lhs.getOIf() == rhs.getOIf());
 
   if (!ret) {
     return false;
@@ -355,6 +402,21 @@ Route::isValid() const {
   return isValid_;
 }
 
+bool
+Route::isMultiPath() const {
+  return isMultiPath_;
+}
+
+std::optional<uint32_t>
+Route::getOIf() const {
+  return oif_;
+}
+
+std::optional<folly::IPAddress>
+Route::getPrefSrc() const {
+  return prefSrc_;
+}
+
 std::string
 Route::str() const {
   std::string result;
@@ -375,6 +437,14 @@ Route::str() const {
       scope_,
       static_cast<int>(type_));
 
+  if (oif_) {
+    char ifName[IF_NAMESIZE] = {0};
+    result += fmt::format(", dev {}", if_indextoname(oif_.value(), ifName));
+  }
+  if (prefSrc_) {
+    result += fmt::format(", src {}", prefSrc_.value().str());
+  }
+
   if (priority_) {
     result += fmt::format(", priority {}", priority_.value());
   }
@@ -391,11 +461,6 @@ Route::str() const {
     result += "\n  " + nextHop.str();
   }
   return result;
-}
-
-void
-Route::setPriority(uint32_t priority) {
-  priority_ = priority;
 }
 
 void
@@ -588,11 +653,11 @@ NextHop::str() const {
       (ifIndex_ ? std::to_string(*ifIndex_) : "n/a"),
       std::to_string(weight_),
       static_cast<int>(getFamily()));
-  if (labelAction_.has_value()) {
-    result += fmt::format(
-        " Label action {}",
-        apache::thrift::util::enumNameSafe(labelAction_.value()));
-  }
+  //if (labelAction_.has_value()) {
+   // result += fmt::format(
+     //   " Label action {}",
+       // apache::thrift::util::enumNameSafe(labelAction_.value()));
+  //}
   if (swapLabel_.has_value()) {
     result += fmt::format(" Swap label {}", swapLabel_.value());
   }
@@ -633,6 +698,18 @@ std::optional<folly::CIDRNetwork>
 IfAddressBuilder::getPrefix() const {
   return prefix_;
 }
+
+IfAddressBuilder&
+IfAddressBuilder::setBroadcast(const folly::CIDRNetwork& broadcast) {
+  broadcast_ = broadcast;
+  return *this;
+}
+
+std::optional<folly::CIDRNetwork>
+IfAddressBuilder::getBrocast() const {
+  return broadcast_;
+}
+
 
 IfAddressBuilder&
 IfAddressBuilder::setFamily(uint8_t family) {
@@ -679,6 +756,17 @@ IfAddressBuilder::isValid() const {
   return isValid_;
 }
 
+std::optional<uint32_t>
+IfAddressBuilder::getPreferredLft() const {
+  return preferredLft_;
+}
+
+IfAddressBuilder&
+IfAddressBuilder::setPreferredLft(uint32_t preferredLft) {
+  preferredLft_ = preferredLft;
+  return *this;
+}
+
 void
 IfAddressBuilder::reset() {
   ifIndex_ = 0;
@@ -687,6 +775,7 @@ IfAddressBuilder::reset() {
   scope_.reset();
   flags_.reset();
   family_.reset();
+  preferredLft_.reset();
 }
 
 IfAddress::IfAddress(const IfAddressBuilder& builder)
@@ -695,7 +784,9 @@ IfAddress::IfAddress(const IfAddressBuilder& builder)
       isValid_(builder.isValid()),
       scope_(builder.getScope()),
       flags_(builder.getFlags()),
-      family_(builder.getFamily()) {}
+      family_(builder.getFamily()),
+      broadcast_(builder.getBrocast()),
+      preferredLft_(builder.getPreferredLft()) {}
 
 IfAddress::~IfAddress() {}
 
@@ -715,6 +806,7 @@ IfAddress::operator=(IfAddress&& other) noexcept {
   scope_ = std::move(other.scope_);
   flags_ = std::move(other.flags_);
   family_ = std::move(other.family_);
+  preferredLft_ = std::move(other.preferredLft_);
   return *this;
 }
 
@@ -734,6 +826,7 @@ IfAddress::operator=(const IfAddress& other) {
   scope_ = other.scope_;
   flags_ = other.flags_;
   family_ = other.family_;
+  preferredLft_ = other.preferredLft_;
 
   return *this;
 }
@@ -770,6 +863,11 @@ IfAddress::getPrefix() const {
   return prefix_;
 }
 
+std::optional<folly::CIDRNetwork>
+IfAddress::getBroadcast() const {
+  return broadcast_;
+}
+
 std::optional<uint8_t>
 IfAddress::getScope() const {
   return scope_;
@@ -780,15 +878,23 @@ IfAddress::getFlags() const {
   return flags_;
 }
 
+std::optional<uint32_t>
+IfAddress::getPreferredLft() const {
+  return preferredLft_;
+}
+
 std::string
 IfAddress::str() const {
   return fmt::format(
-      "addr {} {} intf-index {}, valid {}, scope {}",
+      "addr {} {} intf-index {}, valid {}, scope {}, preferred_lft {}, broadcast {}",
       getFamily() == AF_INET ? "inet" : "inet6",
       prefix_.has_value() ? folly::IPAddress::networkToString(*prefix_) : "n/a",
       ifIndex_,
       isValid_ ? "Yes" : "No",
-      scope_.has_value() ? scope_.value() : -1);
+      scope_.has_value() ? scope_.value() : -1,
+      preferredLft_.has_value() ? folly::to<std::string>(preferredLft_.value())
+                                : "forever"),
+      broadcast_.has_value() ? folly::IPAddress::networkToString(*broadcast_) : "n/a";
 }
 
 bool
@@ -797,7 +903,8 @@ operator==(const IfAddress& lhs, const IfAddress& rhs) {
       lhs.getPrefix() == rhs.getPrefix() &&
       lhs.getIfIndex() == rhs.getIfIndex() && lhs.isValid() == rhs.isValid() &&
       lhs.getScope() == rhs.getScope() && lhs.getFlags() == rhs.getFlags() &&
-      lhs.getFamily() == rhs.getFamily());
+      lhs.getFamily() == rhs.getFamily() &&
+      lhs.getPreferredLft() == rhs.getPreferredLft());
 }
 
 /*================================Neighbor====================================*/
@@ -1100,12 +1207,23 @@ LinkBuilder::getGreInfo() const {
   return greInfo_;
 }
 
+LinkBuilder&
+LinkBuilder::setLinkGroup(uint32_t linkGroup) {
+  linkGroup_ = linkGroup;
+  return *this;
+}
+
+std::optional<uint32_t>
+LinkBuilder::getLinkGroup() const {
+  return linkGroup_;
+}
 Link::Link(const LinkBuilder& builder)
     : linkName_(builder.getLinkName()),
       ifIndex_(builder.getIfIndex()),
       flags_(builder.getFlags()),
       linkKind_(builder.getLinkKind()),
-      greInfo_(builder.getGreInfo()) {}
+      greInfo_(builder.getGreInfo()),
+      linkGroup_(builder.getLinkGroup()) {}
 
 Link::~Link() {}
 
@@ -1124,6 +1242,7 @@ Link::operator=(Link&& other) noexcept {
   flags_ = std::move(other.flags_);
   linkKind_ = std::move(other.linkKind_);
   greInfo_ = std::move(other.greInfo_);
+  linkGroup_ = std::move(other.linkGroup_);
   return *this;
 }
 
@@ -1142,6 +1261,7 @@ Link::operator=(const Link& other) {
   flags_ = other.flags_;
   linkKind_ = other.linkKind_;
   greInfo_ = other.greInfo_;
+  linkGroup_ = other.linkGroup_;
   return *this;
 }
 
@@ -1180,25 +1300,30 @@ Link::getGreInfo() const {
   return greInfo_;
 }
 
+std::optional<uint32_t>
+Link::getLinkGroup() const {
+  return linkGroup_;
+}
 std::string
 Link::str() const {
   return fmt::format(
-      "link {} intf-index {}, flags {}, kind {}, gre_info {}",
+      "link {} intf-index {}, flags {}, kind {}, gre_info {}, group {}",
       linkName_,
       ifIndex_,
       std::to_string(flags_),
       linkKind_ ? linkKind_.value() : "n/a",
-      greInfo_ ? greInfo_.value().str() : "n/a");
+      greInfo_ ? greInfo_.value().str() : "n/a",
+      linkGroup_ ? std::to_string(linkGroup_.value()) : "default");
 }
 
 bool
 operator==(const Link& lhs, const Link& rhs) {
-  return (
-      lhs.getLinkName() == rhs.getLinkName() and
-      lhs.getIfIndex() == rhs.getIfIndex() and
-      lhs.getFlags() == rhs.getFlags() and
-      lhs.getLinkKind() == rhs.getLinkKind() and
-      lhs.getGreInfo() == rhs.getGreInfo());
+  return (lhs.getLinkName() == rhs.getLinkName() and
+          lhs.getIfIndex() == rhs.getIfIndex() and
+          lhs.getFlags() == rhs.getFlags() and
+          lhs.getLinkKind() == rhs.getLinkKind() and
+          lhs.getGreInfo() == rhs.getGreInfo()) and
+      lhs.getLinkGroup() == rhs.getLinkGroup();
 }
 
 /*==================================Rule======================================*/
