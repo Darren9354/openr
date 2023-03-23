@@ -886,14 +886,15 @@ IfAddress::getPreferredLft() const {
 std::string
 IfAddress::str() const {
   return fmt::format(
-      "addr {} {} intf-index {}, valid {}, scope {}, preferred_lft {}",
+      "addr {} {} intf-index {}, valid {}, scope {}, preferred_lft {}, broadcast {}",
       getFamily() == AF_INET ? "inet" : "inet6",
       prefix_.has_value() ? folly::IPAddress::networkToString(*prefix_) : "n/a",
       ifIndex_,
       isValid_ ? "Yes" : "No",
       scope_.has_value() ? scope_.value() : -1,
       preferredLft_.has_value() ? folly::to<std::string>(preferredLft_.value())
-                                : "forever");
+                                : "forever"),
+      broadcast_.has_value() ? folly::IPAddress::networkToString(*broadcast_) : "n/a";
 }
 
 bool
