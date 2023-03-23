@@ -88,15 +88,13 @@ NetlinkAddrMessage::addOrDeleteIfAddress(
 
   const char* const ipptr = reinterpret_cast<const char*>(ip.bytes());
   int status;
+  status = addAttributes(IFA_ADDRESS, ipptr, ip.byteCount());
   if (ifAddr.getBroadcast().has_value())
   {
     auto ip = std::get<0>(ifAddr.getBroadcast().value());
+    XLOG(INFO) << "Netlink add broadcast address. " << ifAddr.str();
     const char* const ipptr = reinterpret_cast<const char*>(ip.bytes());
     status = addAttributes(IFA_BROADCAST, ipptr, ip.byteCount());
-  }
-  else
-  {
-    status = addAttributes(IFA_ADDRESS, ipptr, ip.byteCount());
   }
   if (status) {
     return status;
