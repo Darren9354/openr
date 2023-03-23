@@ -94,7 +94,7 @@ NetlinkAddrMessage::addOrDeleteIfAddress(
     auto ip = std::get<0>(ifAddr.getBroadcast().value());
     XLOG(INFO) << "Netlink add broadcast address. " << ifAddr.str();
     const char* const ipptr = reinterpret_cast<const char*>(ip.bytes());
-    status = addAttributes(IFA_BROADCAST, ipptr, ip.byteCount());
+    status |= addAttributes(IFA_BROADCAST, ipptr, ip.byteCount());
   }
   if (status) {
     return status;
