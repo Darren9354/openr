@@ -7,293 +7,174 @@
 
 #include <folly/logging/xlog.h>
 
-#include <linux/if_tunnel.h>
-#include <openr/nl/NetlinkLinkMessage.h>
-
-namespace {
-const std::string kGreKind{"gre"};
-const std::string kIp6GreKind{"ip6gre"};
-} // namespace
+#include <openr/nl/NetlinkAddrMessage.h>
 
 namespace openr::fbnl {
 
-NetlinkLinkMessage::NetlinkLinkMessage() : NetlinkMessageBase() {}
+NetlinkAddrMessage::NetlinkAddrMessage() : NetlinkMessageBase() {}
 
-NetlinkLinkMessage::~NetlinkLinkMessage() {
-  CHECK(linkPromise_.isFulfilled());
+NetlinkAddrMessage::~NetlinkAddrMessage() {
+  CHECK(addrPromise_.isFulfilled());
 }
 
 void
-NetlinkLinkMessage::rcvdLink(Link&& link) {
-  rcvdLinks_.emplace_back(std::move(link));
+NetlinkAddrMessage::rcvdIfAddress(IfAddress&& ifAddr) {
+  rcvdAddrs_.emplace_back(std::move(ifAddr));
 }
 
 void
-NetlinkLinkMessage::setReturnStatus(int status) {
+NetlinkAddrMessage::setReturnStatus(int status) {
   if (status == 0) {
-    linkPromise_.setValue(std::move(rcvdLinks_));
+    addrPromise_.setValue(std::move(rcvdAddrs_));
   } else {
-    linkPromise_.setValue(folly::makeUnexpected(status));
+    addrPromise_.setValue(folly::makeUnexpected(status));
   }
+
   NetlinkMessageBase::setReturnStatus(status);
 }
 
 void
-NetlinkLinkMessage::init(int type, uint32_t linkFlags) {
-  if (type != RTM_NEWLINK && type != RTM_DELLINK && type != RTM_GETLINK) {
+NetlinkAddrMessage::init(int type) {
+  if (type != RTM_NEWADDR && type != RTM_DELADDR && type != RTM_GETADDR) {
     XLOG(ERR) << "Incorrect Netlink message type";
     return;
   }
   // initialize netlink header
-  msghdr_->nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
+  msghdr_->nlmsg_len = NLMSG_LENGTH(sizeof(struct ifaddrmsg));
   msghdr_->nlmsg_type = type;
   msghdr_->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
 
-  if (type == RTM_GETLINK) {
-    // Get all links
+  if (type == RTM_GETADDR) {
+    // Get all addresses
     msghdr_->nlmsg_flags |= NLM_F_DUMP;
   }
 
-  if (type == RTM_NEWLINK) {
-    // We create new link or replace existing
+  if (type == RTM_NEWADDR) {
     msghdr_->nlmsg_flags |= NLM_F_CREATE;
-    msghdr_->nlmsg_flags |= NLM_F_REPLACE;
   }
 
-  // intialize the route link message header
+  // intialize the route address message header
   auto nlmsgAlen = NLMSG_ALIGN(sizeof(struct nlmsghdr));
-  ifinfomsg_ = reinterpret_cast<struct ifinfomsg*>((char*)msghdr_ + nlmsgAlen);
-
-  ifinfomsg_->ifi_flags = linkFlags;
-  ifinfomsg_->ifi_change = 0xffffffff;
-}
-
-Link
-NetlinkLinkMessage::parseMessage(const struct nlmsghdr* nlmsg) {
-  LinkBuilder builder;
-  const struct ifinfomsg* const linkEntry =
-      reinterpret_cast<struct ifinfomsg*>(NLMSG_DATA(nlmsg));
-
-  builder =
-      builder.setIfIndex(linkEntry->ifi_index).setFlags(linkEntry->ifi_flags);
-
-  const struct rtattr* linkAttr;
-  auto linkAttrLen = IFLA_PAYLOAD(nlmsg);
-  // process all link attributes
-  for (linkAttr = IFLA_RTA(linkEntry); RTA_OK(linkAttr, linkAttrLen);
-       linkAttr = RTA_NEXT(linkAttr, linkAttrLen)) {
-    switch (linkAttr->rta_type) {
-    case IFLA_IFNAME: {
-      const char* name = reinterpret_cast<const char*>(RTA_DATA(linkAttr));
-      builder = builder.setLinkName(std::string(name));
-    } break;
-    case IFLA_LINKINFO: {
-      auto infoPair = parseLinkInfo(linkAttr);
-      if (infoPair.first.has_value()) {
-        builder = builder.setLinkKind(infoPair.first.value());
-      }
-      if (infoPair.second.has_value()) {
-        builder = builder.setGreInfo(infoPair.second.value());
-      }
-    } break;
-    case IFLA_GROUP: {
-      auto group = reinterpret_cast<uint32_t*>(RTA_DATA(linkAttr));
-      builder = builder.setLinkGroup(*group);
-    } break;
-    }
-  }
-  auto link = builder.build();
-  XLOG(DBG3) << "Netlink parsed link message. " << link.str();
-  return link;
-}
-
-std::pair<std::optional<std::string>, std::optional<GreInfo>>
-NetlinkLinkMessage::parseLinkInfo(const struct rtattr* attr) {
-  const struct rtattr* linkInfoAttr =
-      reinterpret_cast<struct rtattr*> RTA_DATA(attr);
-  int attrLen = RTA_PAYLOAD(attr);
-  std::optional<std::string> linkKind;
-  std::optional<GreInfo> greInfo;
-  // track pointer to attr IFLA_INFO_DATA, linkKind is needed to parse ip
-  const struct rtattr* infoDataAttr = nullptr;
-  do {
-    switch (linkInfoAttr->rta_type) {
-    case IFLA_INFO_KIND: {
-      const char* kind = reinterpret_cast<const char*>(RTA_DATA(linkInfoAttr));
-      linkKind = std::string(kind);
-    } break;
-    case IFLA_INFO_DATA: {
-      infoDataAttr = linkInfoAttr;
-    } break;
-    }
-    linkInfoAttr = RTA_NEXT(linkInfoAttr, attrLen);
-  } while (RTA_OK(linkInfoAttr, attrLen));
-
-  if (infoDataAttr && linkKind) {
-    if (linkKind == kGreKind) {
-      greInfo = parseInfoData(infoDataAttr, AF_INET);
-    } else if (linkKind == kIp6GreKind) {
-      greInfo = parseInfoData(infoDataAttr, AF_INET6);
-    }
-  }
-  return std::make_pair(linkKind, greInfo);
-}
-
-std::optional<GreInfo>
-NetlinkLinkMessage::parseInfoData(
-    const struct rtattr* attr, unsigned char family) {
-  const struct rtattr* infoDataAttr =
-      reinterpret_cast<struct rtattr*> RTA_DATA(attr);
-  int attrLen = RTA_PAYLOAD(attr);
-
-  std::optional<GreInfo> greInfo;
-  std::optional<folly::IPAddress> localAddr;
-  std::optional<folly::IPAddress> remoteAddr;
-  std::optional<uint8_t> ttl;
-
-  do {
-    switch (infoDataAttr->rta_type) {
-    case IFLA_GRE_LOCAL: {
-      const auto ipExpected = parseIp(infoDataAttr, family);
-      if (ipExpected.hasValue()) {
-        localAddr = ipExpected.value();
-      }
-    } break;
-    case IFLA_GRE_REMOTE: {
-      const auto ipExpected = parseIp(infoDataAttr, family);
-      if (ipExpected.hasValue()) {
-        remoteAddr = ipExpected.value();
-      }
-    } break;
-    case IFLA_GRE_TTL: {
-      ttl = *(reinterpret_cast<int*> RTA_DATA(infoDataAttr));
-    } break;
-    }
-    infoDataAttr = RTA_NEXT(infoDataAttr, attrLen);
-  } while (RTA_OK(infoDataAttr, attrLen));
-
-  if (localAddr and remoteAddr and ttl) {
-    greInfo = GreInfo(localAddr.value(), remoteAddr.value(), ttl.value());
-  }
-
-  return greInfo;
+  ifaddrmsg_ = reinterpret_cast<struct ifaddrmsg*>((char*)msghdr_ + nlmsgAlen);
 }
 
 int
-NetlinkLinkMessage::addLink(const Link& link) {
-  init(RTM_NEWLINK, link.getFlags());
+NetlinkAddrMessage::addOrDeleteIfAddress(
+    const IfAddress& ifAddr, const int type) {
+  if (type != RTM_NEWADDR and type != RTM_DELADDR) {
+    XLOG(ERR) << "Incorrect Netlink message type. " << ifAddr.str();
+    return EINVAL;
+  } else if (ifAddr.getFamily() != AF_INET and ifAddr.getFamily() != AF_INET6) {
+    XLOG(ERR) << "Invalid address family. " << ifAddr.str();
+    return EINVAL;
+  } else if (not ifAddr.getPrefix().has_value()) {
+    // No IP address given
+    XLOG(ERR) << "No interface address given. " << ifAddr.str();
+    return EDESTADDRREQ;
+  }
 
-  int status{0};
-  if ((status = addAttributes(
-           IFLA_IFNAME,
-           link.getLinkName().c_str(),
-           link.getLinkName().length()))) {
+  init(type);
+  // initialize netlink address fields
+  auto ip = std::get<0>(ifAddr.getPrefix().value());
+  uint8_t prefixLen = std::get<1>(ifAddr.getPrefix().value());
+  ifaddrmsg_->ifa_family = ifAddr.getFamily();
+  ifaddrmsg_->ifa_prefixlen = prefixLen;
+  ifaddrmsg_->ifa_flags =
+      (ifAddr.getFlags().has_value() ? ifAddr.getFlags().value() : 0);
+  if (ifAddr.getScope().has_value()) {
+    ifaddrmsg_->ifa_scope = ifAddr.getScope().value();
+  }
+  ifaddrmsg_->ifa_index = ifAddr.getIfIndex();
+
+  const char* const ipptr = reinterpret_cast<const char*>(ip.bytes());
+  int status;
+  status = addAttributes(IFA_ADDRESS, ipptr, ip.byteCount());
+  if (ifAddr.getBroadcast().has_value())
+  {
+    auto ip = std::get<0>(ifAddr.getBroadcast().value());
+    XLOG(INFO) << "Netlink add broadcast address. " << ifAddr.str();
+    const char* const ipptr = reinterpret_cast<const char*>(ip.bytes());
+    status = addAttributes(IFA_BROADCAST, ipptr, ip.byteCount());
+  }
+  if (status) {
     return status;
   }
-  if ((status = addLinkInfo(link))) {
+
+  // add cache info if set
+  status = addCacheInfo(ifAddr);
+  if (status) {
     return status;
   }
 
-  return 0;
+  // For IPv4, need to specify the ip address in IFA_LOCAL attribute as well
+  // for point-to-point interfaces
+  // For IPv6, the extra attribute has no effect
+  return addAttributes(IFA_LOCAL, ipptr, ip.byteCount());
 }
 
 int
-NetlinkLinkMessage::addLinkInfo(const Link& link) {
-  std::array<char, kMaxNlPayloadSize> linkInfo = {};
+NetlinkAddrMessage::addCacheInfo(const IfAddress& ifAddr) {
   int status{0};
-  if (!link.getLinkKind().has_value()) {
+  if (!ifAddr.getPreferredLft().has_value()) {
     return 0;
   }
-  struct rtattr* rta = reinterpret_cast<struct rtattr*>(linkInfo.data());
-  // init linkinfo
-  rta->rta_type = IFLA_LINKINFO;
-  rta->rta_len = RTA_LENGTH(0);
-  if ((status = addLinkInfoSubAttrs(linkInfo, link))) {
-    return status;
-  }
+  std::array<char, kMaxNlPayloadSize> cacheInfo = {};
+  struct ifa_cacheinfo* rta =
+      reinterpret_cast<struct ifa_cacheinfo*>(cacheInfo.data());
+  rta->ifa_prefered = ifAddr.getPreferredLft().value();
+  // valid forever
+  rta->ifa_valid = 0xffffffff;
 
-  const char* const data = reinterpret_cast<const char*>(
-      RTA_DATA(reinterpret_cast<struct rtattr*>(linkInfo.data())));
-  int payloadLen =
-      RTA_PAYLOAD(reinterpret_cast<struct rtattr*>(linkInfo.data()));
-  if ((status = addAttributes(IFLA_LINKINFO, data, payloadLen))) {
+  status = addAttributes(IFA_CACHEINFO, cacheInfo.data(), sizeof(*rta));
+  if (status) {
     return status;
   }
 
   return 0;
 }
 
-int
-NetlinkLinkMessage::addLinkInfoSubAttrs(
-    std::array<char, kMaxNlPayloadSize>& linkInfo, const Link& link) const {
-  struct rtattr* rta = reinterpret_cast<struct rtattr*>(linkInfo.data());
+IfAddress
+NetlinkAddrMessage::parseMessage(const struct nlmsghdr* nlmsg) {
+  IfAddressBuilder builder;
+  const struct ifaddrmsg* const addrEntry =
+      reinterpret_cast<struct ifaddrmsg*>(NLMSG_DATA(nlmsg));
 
-  if (addSubAttributes(
-          rta,
-          IFLA_INFO_KIND,
-          link.getLinkKind()->c_str(),
-          link.getLinkKind()->length()) == nullptr) {
-    return ENOBUFS;
-  }
+  const bool isValid = nlmsg->nlmsg_type == RTM_NEWADDR ? true : false;
+  builder = builder.setIfIndex(addrEntry->ifa_index)
+                .setScope(addrEntry->ifa_scope)
+                .setValid(isValid);
 
-  const auto greInfo = link.getGreInfo();
-  if (greInfo.has_value()) {
-    // init sub attribute
-    std::array<char, kMaxNlPayloadSize> linkInfoData = {};
-    struct rtattr* subRta =
-        reinterpret_cast<struct rtattr*>(linkInfoData.data());
-    subRta->rta_type = IFLA_INFO_DATA;
-    subRta->rta_len = RTA_LENGTH(0);
-
-    const auto localAddr = greInfo->getLocalAddr();
-    const auto remoteAddr = greInfo->getRemoteAddr();
-    const auto ttl = greInfo->getTtl();
-    if (addSubAttributes(
-            subRta, IFLA_GRE_LOCAL, localAddr.bytes(), localAddr.byteCount()) ==
-        nullptr) {
-      return ENOBUFS;
+  const struct rtattr* addrAttr;
+  auto addrAttrLen = IFA_PAYLOAD(nlmsg);
+  // process all address attributes
+  for (addrAttr = IFA_RTA(addrEntry); RTA_OK(addrAttr, addrAttrLen);
+       addrAttr = RTA_NEXT(addrAttr, addrAttrLen)) {
+    switch (addrAttr->rta_type) {
+    case IFA_ADDRESS: {
+      if (addrEntry->ifa_family == AF_INET) {
+        struct in_addr* addr4 = reinterpret_cast<in_addr*> RTA_DATA(addrAttr);
+        auto ipAddress = folly::IPAddressV4::fromLong(addr4->s_addr);
+        folly::CIDRNetwork prefix =
+            std::make_pair(ipAddress, (uint8_t)addrEntry->ifa_prefixlen);
+        builder = builder.setPrefix(prefix);
+      } else if (addrEntry->ifa_family == AF_INET6) {
+        struct in6_addr* addr6 = reinterpret_cast<in6_addr*> RTA_DATA(addrAttr);
+        auto ipAddress = folly::IPAddressV6::tryFromBinary(folly::ByteRange(
+            reinterpret_cast<const uint8_t*>(addr6->s6_addr), 16));
+        if (ipAddress.hasValue()) {
+          folly::CIDRNetwork prefix = std::make_pair(
+              ipAddress.value(), (uint8_t)addrEntry->ifa_prefixlen);
+          builder = builder.setPrefix(prefix);
+        } else {
+          XLOG(ERR) << "Error parsing Netlink ADDR message";
+        }
+      }
     }
-    if (addSubAttributes(
-            subRta,
-            IFLA_GRE_REMOTE,
-            remoteAddr.bytes(),
-            remoteAddr.byteCount()) == nullptr) {
-      return ENOBUFS;
-    }
-    if (addSubAttributes(
-            subRta,
-            IFLA_GRE_TTL,
-            reinterpret_cast<const char*>(&ttl),
-            sizeof(uint8_t)) == nullptr) {
-      return ENOBUFS;
-    }
-
-    // add to parent rta
-    const char* const data = reinterpret_cast<const char*>(
-        RTA_DATA(reinterpret_cast<struct rtattr*>(linkInfoData.data())));
-    int payloadLen =
-        RTA_PAYLOAD(reinterpret_cast<struct rtattr*>(linkInfoData.data()));
-    if (addSubAttributes(rta, IFLA_INFO_DATA, data, payloadLen) == nullptr) {
-      return ENOBUFS;
     }
   }
-
-  return 0;
-}
-
-int
-NetlinkLinkMessage::deleteLink(const Link& link) {
-  init(RTM_DELLINK, 0);
-
-  int status{0};
-  if ((status = addAttributes(
-           IFLA_IFNAME,
-           link.getLinkName().c_str(),
-           link.getLinkName().length()))) {
-    return status;
-  }
-
-  return 0;
+  auto addr = builder.build();
+  XLOG(DBG3) << "Netlink parsed address message. " << addr.str();
+  return addr;
 }
 
 } // namespace openr::fbnl
