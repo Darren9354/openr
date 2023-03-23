@@ -571,6 +571,10 @@ class LinkBuilder final {
 
   int getIfIndex() const;
 
+  LinkBuilder& setIfMtu(int mtu);
+
+  int getIfMtu() const;
+
   LinkBuilder& setFlags(uint32_t flags);
 
   uint32_t getFlags() const;
@@ -591,6 +595,7 @@ class LinkBuilder final {
   std::string linkName_;
   int ifIndex_{0};
   uint32_t flags_{0};
+  uint32_t mtu_{0};
   std::optional<std::string> linkKind_;
   std::optional<GreInfo> greInfo_;
   std::optional<uint32_t> linkGroup_;
@@ -612,6 +617,8 @@ class Link final {
 
   int getIfIndex() const;
 
+  int getIfMtu() const;
+
   uint32_t getFlags() const;
 
   bool isUp() const;
@@ -630,6 +637,7 @@ class Link final {
   std::string linkName_;
   int ifIndex_{0};
   uint32_t flags_{0};
+  uint32_t mtu_{0};
   std::optional<std::string> linkKind_;
   std::optional<GreInfo> greInfo_;
   std::optional<uint32_t> linkGroup_;
