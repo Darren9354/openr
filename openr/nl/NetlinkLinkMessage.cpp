@@ -211,7 +211,17 @@ NetlinkLinkMessage::addLinkInfo(const Link& link) {
   if ((status = addLinkInfoSubAttrs(linkInfo, link))) {
     return status;
   }
-
+  if (link.getIfMtu())
+  {
+    int mtu = link.getIfMtu();
+    if (addSubAttributes(
+        rta,
+        IFLA_MTU,
+        &mtu,
+        4) == nullptr){
+          return ENOBUFS;
+        }
+  }
   const char* const data = reinterpret_cast<const char*>(
       RTA_DATA(reinterpret_cast<struct rtattr*>(linkInfo.data())));
   int payloadLen =
